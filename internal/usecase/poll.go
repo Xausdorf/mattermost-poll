@@ -64,7 +64,7 @@ func (p *Poll) AddAnswer(ctx context.Context, answer *domain.Answer) error {
 	}
 	if err := p.pollRepo.UpdateByID(ctx, answer.PollID, func(poll *domain.Poll) error {
 		if len(poll.Options) <= answer.Vote {
-			return fmt.Errorf("there is no such option in poll")
+			return errors.New("there is no such option in poll")
 		}
 		poll.Options[answer.Vote].Votes++
 		return nil
@@ -102,11 +102,11 @@ func (p *Poll) DeletePollByID(ctx context.Context, id int64, senderID string) er
 		return ErrUserIsNotPollAuthor
 	}
 
-	if err := p.pollRepo.DeleteByID(ctx, id); err != nil {
+	if err = p.pollRepo.DeleteByID(ctx, id); err != nil {
 		return fmt.Errorf("could not delete poll: %w", err)
 	}
 	// no need for a transaction, records can be deleted manually
-	if err := p.answerRepo.DeleteByPoll(ctx, id); err != nil {
+	if err = p.answerRepo.DeleteByPoll(ctx, id); err != nil {
 		return fmt.Errorf("could not delete poll answers: %w", err)
 	}
 	return nil
@@ -122,7 +122,7 @@ func (p *Poll) isPollActive(ctx context.Context, pollID int64) (bool, error) {
 
 func validateAnswer(answer *domain.Answer) error {
 	if answer == nil {
-		return fmt.Errorf("answer is nil")
+		return errors.New("answer is nil")
 	}
 	if answer.UserID == "" {
 		return ErrInvalidUserID
