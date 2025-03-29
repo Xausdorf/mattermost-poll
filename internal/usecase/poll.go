@@ -13,6 +13,7 @@ var (
 	ErrUserIsNotPollAuthor = errors.New("user is not poll author")
 	ErrPollNotFound        = errors.New("poll not found")
 	ErrPollIsNotActive     = errors.New("poll is not active")
+	ErrNoSuchOption        = errors.New("there is no such option in poll")
 	ErrAnswerNotFound      = errors.New("answer not found")
 	ErrAnswerAlreadyExists = errors.New("answer already exists")
 )
@@ -63,7 +64,7 @@ func (p *Poll) AddAnswer(ctx context.Context, answer *domain.Answer) error {
 	}
 	if err := p.pollRepo.UpdateByID(ctx, answer.PollID, func(poll *domain.Poll) error {
 		if len(poll.Options) <= answer.Vote {
-			return errors.New("there is no such option in poll")
+			return ErrNoSuchOption
 		}
 		poll.Options[answer.Vote].Votes++
 		return nil
@@ -73,12 +74,12 @@ func (p *Poll) AddAnswer(ctx context.Context, answer *domain.Answer) error {
 	return nil
 }
 
-func (p *Poll) GetPollResultsByID(ctx context.Context, id string) ([]domain.PollOption, error) {
+func (p *Poll) GetPollByID(ctx context.Context, id string) (*domain.Poll, error) {
 	poll, err := p.pollRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("could not retrieve poll: %w", err)
 	}
-	return poll.Options, nil
+	return poll, nil
 }
 
 func (p *Poll) ClosePollByID(ctx context.Context, id string, senderID string) error {

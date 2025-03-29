@@ -36,3 +36,9 @@ func NewPoll(question string, options []PollOption, author string) *Poll {
 		Author:   author,
 	}
 }
+
+func NewPollOption(text string) *PollOption {
+	return &PollOption{
+		Text: text,
+	}
+}
