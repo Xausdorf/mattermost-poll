@@ -19,16 +19,15 @@ var (
 
 type PollRepository interface {
 	Save(ctx context.Context, poll *domain.Poll) error
-	UpdateByID(ctx context.Context, id int64, updateFn func(poll *domain.Poll) error) error
-	GetByID(ctx context.Context, id int64) (*domain.Poll, error)
-	DeleteByID(ctx context.Context, id int64) error
+	UpdateByID(ctx context.Context, id string, updateFn func(poll *domain.Poll) error) error
+	GetByID(ctx context.Context, id string) (*domain.Poll, error)
+	DeleteByID(ctx context.Context, id string) error
 }
 
 type AnswerRepository interface {
 	Save(ctx context.Context, answer *domain.Answer) error
-	GetByUserAndPoll(ctx context.Context, userID string, pollID int64) (*domain.Answer, error)
-	DeleteByUserAndPoll(ctx context.Context, userID string, pollID int64) error
-	DeleteByPoll(ctx context.Context, pollID int64) error
+	GetByUserAndPoll(ctx context.Context, userID string, pollID string) (*domain.Answer, error)
+	DeleteByPoll(ctx context.Context, pollID string) error
 }
 
 type Poll struct {
@@ -74,7 +73,7 @@ func (p *Poll) AddAnswer(ctx context.Context, answer *domain.Answer) error {
 	return nil
 }
 
-func (p *Poll) GetPollResultsByID(ctx context.Context, id int64) ([]domain.PollOption, error) {
+func (p *Poll) GetPollResultsByID(ctx context.Context, id string) ([]domain.PollOption, error) {
 	poll, err := p.pollRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("could not retrieve poll: %w", err)
@@ -82,7 +81,7 @@ func (p *Poll) GetPollResultsByID(ctx context.Context, id int64) ([]domain.PollO
 	return poll.Options, nil
 }
 
-func (p *Poll) ClosePollByID(ctx context.Context, id int64, senderID string) error {
+func (p *Poll) ClosePollByID(ctx context.Context, id string, senderID string) error {
 	return p.pollRepo.UpdateByID(ctx, id, func(poll *domain.Poll) error {
 		if poll.Author != senderID {
 			return ErrUserIsNotPollAuthor
@@ -92,7 +91,7 @@ func (p *Poll) ClosePollByID(ctx context.Context, id int64, senderID string) err
 	})
 }
 
-func (p *Poll) DeletePollByID(ctx context.Context, id int64, senderID string) error {
+func (p *Poll) DeletePollByID(ctx context.Context, id string, senderID string) error {
 	poll, err := p.pollRepo.GetByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("could not retrieve poll: %w", err)
@@ -112,7 +111,7 @@ func (p *Poll) DeletePollByID(ctx context.Context, id int64, senderID string) er
 	return nil
 }
 
-func (p *Poll) isPollActive(ctx context.Context, pollID int64) (bool, error) {
+func (p *Poll) isPollActive(ctx context.Context, pollID string) (bool, error) {
 	poll, err := p.pollRepo.GetByID(ctx, pollID)
 	if err != nil {
 		return false, fmt.Errorf("could not retrieve poll: %w", err)
