@@ -7,6 +7,8 @@ require (
 	github.com/vmihailenco/msgpack/v5 v5.3.5
 )
 
+require github.com/shopspring/decimal v1.3.1 // indirect
+
 require (
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/dustin/go-humanize v1.0.0 // indirect

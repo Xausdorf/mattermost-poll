@@ -1,4 +1,4 @@
-package tarantool
+package ttadapter
 
 import (
 	"context"
