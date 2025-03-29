@@ -1,8 +1,10 @@
 package domain
 
+import "github.com/google/uuid"
+
 // Poll - structure for storing information about poll.
 type Poll struct {
-	ID       int64
+	ID       string
 	Question string
 	Options  []PollOption
 	IsActive bool
@@ -20,13 +22,14 @@ type PollOption struct {
 // Answer - structure for connecting the user and his vote in the poll.
 type Answer struct {
 	UserID string
-	PollID int64
+	PollID string
 	// Vote - option number in the list of poll's options.
 	Vote int
 }
 
 func NewPoll(question string, options []PollOption, author string) *Poll {
 	return &Poll{
+		ID:       uuid.NewString(),
 		Question: question,
 		Options:  options,
 		IsActive: true,
