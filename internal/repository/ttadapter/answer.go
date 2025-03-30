@@ -42,7 +42,7 @@ func (r *AnswerRepository) Save(ctx context.Context, answer *domain.Answer) erro
 func (r *AnswerRepository) GetByUserAndPoll(ctx context.Context, userID string, pollID string) (*domain.Answer, error) {
 	var res []AnswerModel
 	if err := r.conn.Do(
-		tarantool.NewSelectRequest(pollSpace).
+		tarantool.NewSelectRequest(answerSpace).
 			Context(ctx).
 			Index("user_poll").
 			Limit(1).

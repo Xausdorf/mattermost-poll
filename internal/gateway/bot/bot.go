@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -26,11 +27,14 @@ type Config struct {
 	mmUserName string
 	mmTeamName string
 	mmToken    string
-	mmServer   string
+	mmServer   *url.URL
 }
 
 func LoadConfig() Config {
-	var cfg Config
+	var (
+		cfg Config
+		err error
+	)
 
 	cfg.mmUserName = os.Getenv("MM_USERNAME")
 	if cfg.mmUserName == "" {
@@ -44,9 +48,9 @@ func LoadConfig() Config {
 	if cfg.mmToken == "" {
 		log.Fatal("Mattermost token is not set")
 	}
-	cfg.mmServer = os.Getenv("MM_SERVER")
-	if cfg.mmServer == "" {
-		log.Fatal("Mattermost URL is not set")
+	cfg.mmServer, err = url.Parse(os.Getenv("MM_SERVER"))
+	if err != nil {
+		log.Fatalf("Mattermost URL is not valid: %v", err)
 	}
 
 	return cfg
@@ -65,19 +69,19 @@ func NewPollingBot(cfg Config, pollService *usecase.Poll) *PollingBot {
 	var bot PollingBot
 
 	bot.cfg = cfg
-	bot.client = model.NewAPIv4Client(bot.cfg.mmServer)
+	bot.client = model.NewAPIv4Client(bot.cfg.mmServer.String())
 	bot.client.SetToken(bot.cfg.mmToken)
 
 	user, resp, err := bot.client.GetMe("")
 	if err != nil {
-		log.Fatal("Could not log in")
+		log.Fatalf("Could not log in to Mattermost: %v", err)
 	}
 	log.Printf("Logged in to mattermost: user=%v; resp=%v\n", user, resp)
 	bot.user = user
 
 	team, resp, err := bot.client.GetTeamByName(cfg.mmTeamName, "")
 	if err != nil {
-		log.Fatal("Could not find team")
+		log.Fatalf("Could not find team: %v", err)
 	}
 	log.Printf("Team found: team=%v; resp=%v\n", team, resp)
 	bot.team = team
@@ -90,9 +94,13 @@ func NewPollingBot(cfg Config, pollService *usecase.Poll) *PollingBot {
 func (b *PollingBot) Listen(ctx context.Context) {
 	for range maxRetries {
 		var err error
-		b.webSocketClient, err = model.NewWebSocketClient4(b.cfg.mmServer, b.client.AuthToken)
+		b.webSocketClient, err = model.NewWebSocketClient4(
+			fmt.Sprintf("ws://%s", b.cfg.mmServer.Host+b.cfg.mmServer.Path),
+			b.client.AuthToken,
+		)
 		if err != nil {
-			log.Println("Could not connect mattermost websocket, retrying...")
+			log.Printf("Could not connect mattermost websocket: %v\n", err)
+			continue
 		}
 		log.Println("Mattermost websocket succesfully connected")
 
@@ -149,25 +157,26 @@ func (b *PollingBot) handlePost(ctx context.Context, post *model.Post) {
 	r.Comma = ' '
 	tokens, err := r.Read()
 	if err != nil {
-		log.Printf("Could not split post's message: msg=%q; post=%v\n", post.Message, post)
+		log.Printf("Could not split post's message: msg=%q; post=%v; %v\n", post.Message, post, err)
 		return
 	}
+	log.Printf("Handling post tokens: %v", tokens)
 	if len(tokens) == 0 {
 		return
 	}
 
 	switch tokens[0] {
-	case "/poll_start":
+	case "!poll_start":
 		b.handleStart(ctx, post, tokens[1:])
-	case "/poll_vote":
+	case "!poll_vote":
 		b.handleVote(ctx, post, tokens[1:])
-	case "/poll_results":
+	case "!poll_results":
 		b.handleResults(ctx, post, tokens[1:])
-	case "/poll_close":
+	case "!poll_close":
 		b.handleClose(ctx, post, tokens[1:])
-	case "/poll_delete":
+	case "!poll_delete":
 		b.handleDelete(ctx, post, tokens[1:])
-	case "/help":
+	case "!help":
 		b.handleHelp(ctx, post, tokens[1:])
 	}
 }
@@ -176,7 +185,10 @@ func (b *PollingBot) Respond(_ context.Context, post *model.Post, msg string) {
 	resp := &model.Post{}
 	resp.ChannelId = post.ChannelId
 	resp.Message = msg
-	resp.RootId = post.Id
+	resp.RootId = post.RootId
+	if post.RootId == "" {
+		resp.RootId = post.Id
+	}
 
 	if _, _, err := b.client.CreatePost(resp); err != nil {
 		log.Printf("Could not respond to post: msg=%q; post=%v; %v\n", msg, post, err)
@@ -184,7 +196,7 @@ func (b *PollingBot) Respond(_ context.Context, post *model.Post, msg string) {
 }
 
 func (b *PollingBot) handleStart(ctx context.Context, post *model.Post, args []string) {
-	// /poll_start [question] "[option1]" "[option2]" ...
+	// !poll_start "[question]" "[option1]" "[option2]" ...
 	if len(args) < pollStartMinArgsCount {
 		b.Respond(ctx, post, "Too few arguments. May be you didn't write the options?")
 		return
@@ -192,7 +204,7 @@ func (b *PollingBot) handleStart(ctx context.Context, post *model.Post, args []s
 
 	options := make([]domain.PollOption, len(args)-1)
 	for i := 1; i < len(args); i++ {
-		options[i] = *domain.NewPollOption(args[i])
+		options[i-1] = *domain.NewPollOption(args[i])
 	}
 
 	poll := domain.NewPoll(args[0], options, post.UserId)
@@ -227,7 +239,7 @@ func (b *PollingBot) handleStart(ctx context.Context, post *model.Post, args []s
 }
 
 func (b *PollingBot) handleVote(ctx context.Context, post *model.Post, args []string) {
-	// /poll_vote [pollID] [vote]
+	// !poll_vote [pollID] [vote]
 	if len(args) != pollVoteArgsCount {
 		b.Respond(ctx, post, "There must be 2 arguments: poll ID and option's number")
 		return
@@ -248,6 +260,10 @@ func (b *PollingBot) handleVote(ctx context.Context, post *model.Post, args []st
 			b.Respond(ctx, post, "You have already voted in this poll")
 			return
 		}
+		if errors.Is(err, usecase.ErrPollNotFound) {
+			b.Respond(ctx, post, "There is no poll with such ID. May be poll was deleted?")
+			return
+		}
 		if errors.Is(err, usecase.ErrPollIsNotActive) {
 			b.Respond(ctx, post, "Poll is closed, you can not vote")
 			return
@@ -265,7 +281,7 @@ func (b *PollingBot) handleVote(ctx context.Context, post *model.Post, args []st
 }
 
 func (b *PollingBot) handleResults(ctx context.Context, post *model.Post, args []string) {
-	// /poll_results [pollID]
+	// !poll_results [pollID]
 	if len(args) != 1 {
 		b.Respond(ctx, post, "There must be 1 argument: poll ID")
 		return
@@ -304,7 +320,7 @@ func (b *PollingBot) handleResults(ctx context.Context, post *model.Post, args [
 }
 
 func (b *PollingBot) handleClose(ctx context.Context, post *model.Post, args []string) {
-	// /poll_close [pollID]
+	// !poll_close [pollID]
 	if len(args) != 1 {
 		b.Respond(ctx, post, "There must be 1 argument: poll ID")
 		return
@@ -329,7 +345,7 @@ func (b *PollingBot) handleClose(ctx context.Context, post *model.Post, args []s
 }
 
 func (b *PollingBot) handleDelete(ctx context.Context, post *model.Post, args []string) {
-	// /poll_delete [pollID]
+	// !poll_delete [pollID]
 	if len(args) != 1 {
 		b.Respond(ctx, post, "There must be 1 argument: poll ID")
 		return
@@ -354,18 +370,18 @@ func (b *PollingBot) handleDelete(ctx context.Context, post *model.Post, args []
 }
 
 func (b *PollingBot) handleHelp(ctx context.Context, post *model.Post, _ []string) {
-	// /help
+	// !help
 	b.Respond(ctx, post, `Available commands:
-	* /help - info about commands
+	* !help - info about commands
 
-	* /poll_start [question] "[option1]" "[option2]" ... - creates a poll and returns poll's ID. 
-	IMPORTANT: options must be quoted.
+	* !poll_start "[question]" "[option1]" "[option2]" ... - creates a poll and returns poll's ID. 
+	IMPORTANT: question and options must be quoted.
 
-	* /poll_vote [pollID] [vote] - register user's vote. Parameter [vote] is number of option in the list of options.
+	* !poll_vote [pollID] [vote] - register user's vote. Parameter [vote] is number of option in the list of options.
 	
-	* /poll_results [pollID] - shows poll's results.
+	* !poll_results [pollID] - shows poll's results.
 	
-	* /poll_close [pollID] - author of poll can close it.
+	* !poll_close [pollID] - author of poll can close it.
 	
-	* /poll_delete [pollID] - author of poll can delete it.`)
+	* !poll_delete [pollID] - author of poll can delete it.`)
 }

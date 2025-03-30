@@ -127,5 +127,8 @@ func validateAnswer(answer *domain.Answer) error {
 	if answer.UserID == "" {
 		return ErrInvalidUserID
 	}
+	if answer.Vote < 0 {
+		return ErrNoSuchOption
+	}
 	return nil
 }

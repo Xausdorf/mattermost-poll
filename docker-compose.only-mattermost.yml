@@ -1,0 +1,70 @@
+services:
+  postgres:
+    image: postgres:13-alpine
+    networks:
+      - app_network
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 100
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+      - POSTGRES_DB
+
+  mattermost:
+    depends_on:
+      - postgres
+    image: mattermost/mattermost-team-edition:9.11.6
+    networks:
+      - app_network
+    ports:
+      - "8065:8065"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8065"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 200
+    read_only: false
+    tmpfs:
+      - /tmp
+    volumes:
+      - mattermost_data_config:/mattermost/config:rw
+      - mattermost_data:/mattermost/data:rw
+      - mattermost_data_logs:/mattermost/logs:rw
+      - mattermost_data_plugins:/mattermost/plugins:rw
+      - mattermost_data_client_plugins:/mattermost/client/plugins:rw
+      - mattermost_data_bleve_indexes:/mattermost/bleve-indexes:rw
+    environment:
+      # necessary Mattermost options/variables (see env.example)
+      - MM_SQLSETTINGS_DRIVERNAME
+      - MM_SQLSETTINGS_DATASOURCE
+
+      # necessary for bleve
+      - MM_BLEVESETTINGS_INDEXDIR
+
+      # additional settings
+      - MM_SERVICESETTINGS_SITEURL
+
+volumes:
+  postgres_data:
+  mattermost_data_config:
+  mattermost_data:
+  mattermost_data_logs:
+  mattermost_data_plugins:
+  mattermost_data_client_plugins:
+  mattermost_data_bleve_indexes:
+
+networks:
+  app_network:
+    driver: bridge

@@ -1,0 +1,38 @@
+services:
+  tarantool:
+    image: tarantool/tarantool:3
+    networks:
+      - app_network
+    ports:
+      - "3301:3301"
+    volumes:
+      - tarantool_data:/var/lib/tarantool
+      - ./instances.enabled:/opt/tarantool
+    environment:
+      - TT_APP_NAME=app
+      - TT_INSTANCE_NAME=instance001
+
+  pollingbot:
+    build: ./
+    depends_on:
+      tarantool:
+        condition: service_started
+    networks:
+      - app_network
+    restart: unless-stopped
+    environment:
+      - MM_USERNAME
+      - MM_TEAM
+      - MM_TOKEN
+      - MM_SERVER
+      - TT_ADDRESS
+      - TT_USER
+      - TT_PASSWORD
+
+
+volumes:
+  tarantool_data:
+
+networks:
+  app_network:
+    driver: bridge
